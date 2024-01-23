@@ -1,100 +1,148 @@
 import { useState, useEffect } from "react";
-import he, { decode } from "he";
 import { nanoid } from "nanoid";
-import Quiz from "./components/Quiz";
-
-const decodeHTML = (html) => {
-  return he.decode(html)
-}
+import Menu from "./Menu";
+import Question from "./Question";
 
 function App() {
-  const [quiz, setQuiz] = useState([])
-  const [selectedAnswerId, setSelectedAnswerId] = useState("")
-  const [selectedAnswerByUser, setSelectedAnswerByUser] = useState([])
+    const [isStarted, setIsStarted] = useState(false);
+    const [questions, setQuestions] = useState([]);
+    const [count, setCount] = useState(0); // state used to trigger a new trivia
+    const [checked, setChecked] = useState(false);
+    const [correct, setCorrect] = useState(0);
 
-  // TODO:
-  // 1. Initialise state to hold the selectedAnswersByUser
-  // 2. Create a function to update state and pass it to Child component
-  // 3. Update State on User Interaction
-  // 4. Pass the selected answer as a props to child component
+    useEffect(() => {
+        const shuffleAnswers = (array) => array.sort(() => Math.random() - 0.5);
+        const API_URL = "https://opentdb.com/api.php?amount=10";
 
-  useEffect(() => {
-      async function getData() {
-          try {
-              const res = await fetch("https://opentdb.com/api.php?amount=10")
-              const data = await res.json()
+        async function getData() {
+            const res = await fetch(API_URL);
+            const data = await res.json();
+            // create an array of objects containing answers & question
+            let dataArray = [];
 
-              const quizWithIds = data.results.map(question => {
-                const incorrectAnswers = question.incorrect_answers.map(answer => ({
-                  id: nanoid(),
-                  text: decodeHTML(answer),
-                  isCorrect: false,
-                }));
-                
-                const correctAnswer = {
-                  id: nanoid(),
-                  text: decodeHTML(question.correct_answer),
-                  isCorrect: true,
-                };
+            data.results.forEach((quiz) => {
+                dataArray.push({
+                    id: nanoid(),
+                    answers: shuffleAnswers([
+                        ...quiz.incorrect_answers,
+                        quiz.correct_answer,
+                    ]),
+                    question: quiz.question,
+                    isCorrect: quiz.correct_answer,
+                    isSelected: null, // to track user interactions
+                    isChecked: false, // for final score
+                });
+            });
+            setQuestions(dataArray);
+        }
 
-                const answers = [...incorrectAnswers, correctAnswer]
+        getData();
+    }, [count]);
 
+    function handleCheckAnswers() {
+        // It starts by assuming all answers are selected
+        let selected = true;
+
+        // Check if any answer is not selected
+        questions.forEach((question) => {
+            if (question.isSelected === null) {
+                // if the user hasn't selected an answer
+                selected = false;
+                return; // exit the function
+            }
+        });
+
+        // If any question is not selected, exit until the user select an answer before proceeding
+        if (!selected) {
+            return;
+        }
+
+        // Mark all questions as checked
+        setQuestions((questions) =>
+            questions.map((question) => {
                 return {
-                  ...question,
-                  answers
-                }
-              })
-              console.log('Data from API:', data);
-              console.log('Quiz with IDs:', quizWithIds);
+                    ...question,
+                    isChecked: true, // update the property to true for each question
+                };
+            })
+        );
 
-              setQuiz(quizWithIds) // This is my state!
-          } catch (error) {
-              console.log("Error fetching data: ", error)
-          }
-      }
-      getData()
-  }, [])
+        // Update the state for checked
+        setChecked(true);
 
-  // TODO: function toggle() to conditionally render style props on clicked answers
-/*   function toggle(answer) {
-    console.log("Clicked answer:", answer)
-    setSelectedAnswerId(answer.id)
-  } */
+        // Count correct answers
+        let correct = 0;
+        questions.forEach((question) => {
+            if (question.isCorrect === question.isSelected) {
+                correct += 1;
+            }
+        });
+        //Update count of correct answers
+        setCorrect(correct);
+    }
 
-  function toggle(answer) {
-    console.log("Clicked answer:", answer);
-  
-    // Check if the answer is already selected
-    const isSelected = selectedAnswerByUser.includes(answer.id);
-  
-    // If selected, remove it; otherwise, add it to the array
-    setSelectedAnswerByUser(prevSelectedAnswers => {
-      return isSelected
-        ? prevSelectedAnswers.filter(id => id !== answer.id)
-        : [...prevSelectedAnswers, answer.id];
-    });
-  
-    setSelectedAnswerId(answer.id);
-  }
-  
+    function handlePlayAgain() {
+        setCount((prevCount) => prevCount + 1);
+        setChecked(false);
+    }
 
-  const quizElements = quiz.map(obj => (
-    <Quiz
-        key={obj.id}
-        id={obj.id}
-        question={decodeHTML(obj.question)}
-        answers={obj.answers} // Pass the entire answers array to Quiz
-        toggle={toggle}
-        selectedAnswerId={selectedAnswerId}
-        selectedAnswerByUser={selectedAnswerByUser}
-        />
-  ))
+    function handleClickAnswer(id, answer) {
+        setQuestions((prevState) =>
+            prevState.map((object) => {
+                return object.id === id
+                    ? { ...object, isSelected: answer }
+                    : object;
+            })
+        );
+    }
 
-  return (
-    <div className="quiz-page">
-      {quizElements}
-    </div>
-  )
+    function startTrivia() {
+        setIsStarted((prevState) => !prevState);
+    }
+
+    const questionElement = questions
+        ? questions.map((question) => {
+            return (
+                <Question
+                    key={question.id}
+                    id={question.id}
+                    question={question}
+                    handleClickAnswer={handleClickAnswer}
+                />
+            );
+        })
+        : [];
+
+    return (
+        <div>
+            <div>
+                {isStarted ? (
+                    <div className="main-container">
+                        {questionElement}
+                        <div className="end-game-container">
+                            {checked && (
+                                <span className="score">
+                                    You scored {correct}/10 correct answers
+                                </span>
+                            )}
+                            <button
+                                className="btn-score"
+                                onClick={
+                                    checked
+                                        ? handlePlayAgain
+                                        : handleCheckAnswers
+                                }
+                            >
+                                {checked ? "Play Again" : "Check Answer"}
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <Menu start={startTrivia} />
+                )}
+            </div>
+        </div>
+    );
 }
 
-export default App
+export default App;
